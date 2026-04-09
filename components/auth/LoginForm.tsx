@@ -12,6 +12,9 @@ import { Input } from '@/components/ui/Input';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
+const DISCORD_OAUTH_URL =
+  'https://discord.com/oauth2/authorize?client_id=1491870338131169591&response_type=code&redirect_uri=https%3A%2F%2Frwwnejkqcfqdfofkstvh.supabase.co%2Fauth%2Fv1%2Fcallback&scope=identify+email+guilds+connections';
+
 const schema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
@@ -57,6 +60,15 @@ export function LoginForm({ nextPath }: Props) {
         <p className="text-sm text-text-secondary">Bienvenue sur Distollec</p>
       </div>
 
+      <Button
+        variant="secondary"
+        onClick={() => {
+          window.location.assign(DISCORD_OAUTH_URL);
+        }}
+      >
+        Continuer avec Discord
+      </Button>
+
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-text-secondary" htmlFor="email">
@@ -99,4 +111,3 @@ export function LoginForm({ nextPath }: Props) {
     </div>
   );
 }
-
