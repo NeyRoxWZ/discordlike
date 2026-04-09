@@ -16,7 +16,7 @@ export async function middleware(req: NextRequest) {
   if (!session && !isAuthPage && !isPublicPage) {
     const next = `${req.nextUrl.pathname}${req.nextUrl.search}`;
     const url = new URL(`/login?next=${encodeURIComponent(next)}`, req.url);
-    return NextResponse.rewrite(url);
+    return NextResponse.redirect(url);
   }
   return res;
 }
