@@ -38,37 +38,21 @@ export async function GET() {
 
   const baseUsername = normalizeUsername(rawUsername) || 'user';
 
-  const existing = await prisma.user.findUnique({ where: { supabaseId: supabaseUser.id } });
-  if (existing) {
-    return NextResponse.json({ user: existing });
-  }
-
-  const usernameCandidates = [baseUsername, `${baseUsername}_${generateDiscriminator()}`];
-
-  let created = null as Awaited<ReturnType<typeof prisma.user.create>> | null;
-  for (const username of usernameCandidates) {
-    try {
-      created = await prisma.user.create({
-        data: {
-          supabaseId: supabaseUser.id,
-          username,
-          discriminator: generateDiscriminator(),
-          email
-        }
-      });
-      break;
-    } catch {
-      created = null;
+  try {
+    const existing = await prisma.user.findUnique({ where: { supabaseId: supabaseUser.id } });
+    if (existing) {
+      return NextResponse.json({ user: existing });
     }
-  }
 
-  if (!created) {
-    for (let i = 0; i < 10; i++) {
+    const usernameCandidates = [baseUsername, `${baseUsername}_${generateDiscriminator()}`];
+
+    let created = null as Awaited<ReturnType<typeof prisma.user.create>> | null;
+    for (const username of usernameCandidates) {
       try {
         created = await prisma.user.create({
           data: {
             supabaseId: supabaseUser.id,
-            username: `${baseUsername}_${generateDiscriminator()}`,
+            username,
             discriminator: generateDiscriminator(),
             email
           }
@@ -78,13 +62,36 @@ export async function GET() {
         created = null;
       }
     }
-  }
 
-  if (!created) {
-    return NextResponse.json({ error: 'User creation failed' }, { status: 500 });
-  }
+    if (!created) {
+      for (let i = 0; i < 10; i++) {
+        try {
+          created = await prisma.user.create({
+            data: {
+              supabaseId: supabaseUser.id,
+              username: `${baseUsername}_${generateDiscriminator()}`,
+              discriminator: generateDiscriminator(),
+              email
+            }
+          });
+          break;
+        } catch {
+          created = null;
+        }
+      }
+    }
 
-  return NextResponse.json({ user: created });
+    if (!created) {
+      return NextResponse.json({ error: 'User creation failed' }, { status: 500 });
+    }
+
+    return NextResponse.json({ user: created });
+  } catch {
+    return NextResponse.json(
+      { error: 'Database error', hint: 'Vérifie DATABASE_URL / DIRECT_URL (Supabase) dans Vercel' },
+      { status: 500 }
+    );
+  }
 }
 
 const patchSchema = z.object({
@@ -115,35 +122,42 @@ export async function PATCH(req: Request) {
   const parsed = patchSchema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
 
-  const existing = await prisma.user.findUnique({ where: { supabaseId }, select: { id: true } });
-  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const existing = await prisma.user.findUnique({ where: { supabaseId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const updated = await prisma.user.update({
-    where: { id: existing.id },
-    data: {
-      displayName: parsed.data.displayName,
-      pronouns: parsed.data.pronouns,
-      bio: parsed.data.bio,
-      profileColor: parsed.data.profileColor,
-      profileEffect: parsed.data.profileEffect === 'none' ? null : parsed.data.profileEffect
-    },
-    select: {
-      id: true,
-      username: true,
-      discriminator: true,
-      displayName: true,
-      email: true,
-      avatarUrl: true,
-      bannerUrl: true,
-      profileColor: true,
-      profileEffect: true,
-      bio: true,
-      pronouns: true,
-      status: true,
-      customStatus: true,
-      statusEmoji: true
-    }
-  });
+    const updated = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        displayName: parsed.data.displayName,
+        pronouns: parsed.data.pronouns,
+        bio: parsed.data.bio,
+        profileColor: parsed.data.profileColor,
+        profileEffect: parsed.data.profileEffect === 'none' ? null : parsed.data.profileEffect
+      },
+      select: {
+        id: true,
+        username: true,
+        discriminator: true,
+        displayName: true,
+        email: true,
+        avatarUrl: true,
+        bannerUrl: true,
+        profileColor: true,
+        profileEffect: true,
+        bio: true,
+        pronouns: true,
+        status: true,
+        customStatus: true,
+        statusEmoji: true
+      }
+    });
 
-  return NextResponse.json({ user: updated });
+    return NextResponse.json({ user: updated });
+  } catch {
+    return NextResponse.json(
+      { error: 'Database error', hint: 'Vérifie DATABASE_URL / DIRECT_URL (Supabase) dans Vercel' },
+      { status: 500 }
+    );
+  }
 }

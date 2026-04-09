@@ -16,21 +16,32 @@ async function getCurrentUserId() {
   const supabaseId = session?.user?.id;
   if (!supabaseId) return null;
 
-  const user = await prisma.user.findUnique({ where: { supabaseId }, select: { id: true } });
-  return user?.id ?? null;
+  try {
+    const user = await prisma.user.findUnique({ where: { supabaseId }, select: { id: true } });
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET() {
   const userId = await getCurrentUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const servers = await prisma.server.findMany({
-    where: { members: { some: { userId } } },
-    orderBy: { updatedAt: 'desc' },
-    select: { id: true, name: true, iconUrl: true }
-  });
+  try {
+    const servers = await prisma.server.findMany({
+      where: { members: { some: { userId } } },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, name: true, iconUrl: true }
+    });
 
-  return NextResponse.json({ servers });
+    return NextResponse.json({ servers });
+  } catch {
+    return NextResponse.json(
+      { error: 'Database error', hint: 'Vérifie DATABASE_URL / DIRECT_URL (Supabase) dans Vercel' },
+      { status: 500 }
+    );
+  }
 }
 
 const createSchema = z.object({
@@ -57,43 +68,50 @@ export async function POST(req: Request) {
     Permissions.CONNECT |
     Permissions.SPEAK;
 
-  const created = await prisma.$transaction(async (tx) => {
-    const server = await tx.server.create({
-      data: {
-        name: parsed.data.name,
-        description: parsed.data.description,
-        ownerId: userId,
-        isPublic: parsed.data.isPublic ?? false
-      },
-      select: { id: true, name: true }
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const server = await tx.server.create({
+        data: {
+          name: parsed.data.name,
+          description: parsed.data.description,
+          ownerId: userId,
+          isPublic: parsed.data.isPublic ?? false
+        },
+        select: { id: true, name: true }
+      });
+
+      const everyoneRole = await tx.role.create({
+        data: {
+          serverId: server.id,
+          name: '@everyone',
+          isEveryone: true,
+          permissions: basePermissions
+        },
+        select: { id: true }
+      });
+
+      const member = await tx.member.create({
+        data: { serverId: server.id, userId },
+        select: { id: true }
+      });
+
+      await tx.memberRole.create({
+        data: { memberId: member.id, roleId: everyoneRole.id }
+      });
+
+      await tx.channel.create({
+        data: { serverId: server.id, name: 'général', type: 'TEXT', position: 0 },
+        select: { id: true }
+      });
+
+      return server;
     });
 
-    const everyoneRole = await tx.role.create({
-      data: {
-        serverId: server.id,
-        name: '@everyone',
-        isEveryone: true,
-        permissions: basePermissions
-      },
-      select: { id: true }
-    });
-
-    const member = await tx.member.create({
-      data: { serverId: server.id, userId },
-      select: { id: true }
-    });
-
-    await tx.memberRole.create({
-      data: { memberId: member.id, roleId: everyoneRole.id }
-    });
-
-    await tx.channel.create({
-      data: { serverId: server.id, name: 'général', type: 'TEXT', position: 0 },
-      select: { id: true }
-    });
-
-    return server;
-  });
-
-  return NextResponse.json({ server: created }, { status: 201 });
+    return NextResponse.json({ server: created }, { status: 201 });
+  } catch {
+    return NextResponse.json(
+      { error: 'Database error', hint: 'Vérifie DATABASE_URL / DIRECT_URL (Supabase) dans Vercel' },
+      { status: 500 }
+    );
+  }
 }
