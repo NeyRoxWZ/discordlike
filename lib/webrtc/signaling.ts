@@ -13,9 +13,13 @@ export function openSignalingChannel(
   onMessage: (msg: SignalMessage) => void
 ) {
   const supabase = getSupabaseBrowserClient();
-  const channel = supabase.channel(`voice-channel-${channelId}`).on('broadcast', { event: 'signal' }, ({ payload }) => {
-    onMessage(payload as SignalMessage);
-  });
+  const channel = supabase
+    .channel(`voice-channel-${channelId}`, {
+      config: { private: true, broadcast: { self: true, ack: true } }
+    })
+    .on('broadcast', { event: 'signal' }, ({ payload }) => {
+      onMessage(payload as SignalMessage);
+    });
 
   let done = false;
   const ready = new Promise<void>((resolve, reject) => {

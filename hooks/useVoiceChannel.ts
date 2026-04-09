@@ -246,6 +246,12 @@ export function useVoiceChannel() {
       setIsConnecting(true);
 
       try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (accessToken) {
+          supabase.realtime.setAuth(accessToken);
+        }
+
         const { data } = await supabase.auth.getUser();
         if (!data.user) {
           throw new Error('Unauthorized');
