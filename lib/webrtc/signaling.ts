@@ -19,17 +19,30 @@ export function openSignalingChannel(
 
   let done = false;
   const ready = new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error('Realtime timeout'));
+    }, 10_000);
+
     channel.subscribe((status) => {
       if (done) return;
       if (status === 'SUBSCRIBED') {
         done = true;
+        window.clearTimeout(timer);
         resolve();
       } else if (status === 'CHANNEL_ERROR') {
         done = true;
+        window.clearTimeout(timer);
         reject(new Error('Realtime indisponible'));
       } else if (status === 'TIMED_OUT') {
         done = true;
+        window.clearTimeout(timer);
         reject(new Error('Realtime timeout'));
+      } else if (status === 'CLOSED') {
+        done = true;
+        window.clearTimeout(timer);
+        reject(new Error('Realtime fermé'));
       }
     });
   });
