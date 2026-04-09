@@ -245,59 +245,80 @@ export function useVoiceChannel() {
       if (channelRef.current) return;
       setIsConnecting(true);
 
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        setIsConnecting(false);
-        throw new Error('Unauthorized');
-      }
-      myUserIdRef.current = data.user.id;
-      myUserNameRef.current =
-        (typeof data.user.user_metadata?.username === 'string' && data.user.user_metadata.username) ||
-        data.user.email?.split('@')[0] ||
-        data.user.id.slice(0, 6);
-
-      let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch {
+        const { data } = await supabase.auth.getUser();
+        if (!data.user) {
+          throw new Error('Unauthorized');
+        }
+        myUserIdRef.current = data.user.id;
+        myUserNameRef.current =
+          (typeof data.user.user_metadata?.username === 'string' && data.user.user_metadata.username) ||
+          data.user.email?.split('@')[0] ||
+          data.user.id.slice(0, 6);
+
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch {
+          throw new Error('Microphone refusé ou indisponible');
+        }
+        localStreamRef.current = stream;
+        const [audioTrack] = stream.getAudioTracks();
+        localAudioTrackRef.current = audioTrack ?? null;
+
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new AudioContext();
+        }
+        const audioCtx = audioCtxRef.current;
+        if (audioCtx && localStreamRef.current) {
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume().catch(() => {});
+          }
+          const src = audioCtx.createMediaStreamSource(localStreamRef.current);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 2048;
+          const data = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+          src.connect(analyser);
+          analyserRef.current = { analyser, data };
+          startAnalyserLoop();
+        }
+
+        channelIdRef.current = channelId;
+        channelRef.current = openSignalingChannel(channelId, handleSignal);
+        await channelRef.current.ready;
+        await channelRef.current.send({
+          type: 'join',
+          fromUserId: myUserIdRef.current,
+          userName: myUserNameRef.current
+        });
+        await channelRef.current.send({ type: 'mute', fromUserId: myUserIdRef.current, isMuted });
+        setIsConnected(true);
+      } catch (e) {
+        const stream = localStreamRef.current;
+        if (stream) {
+          for (const track of stream.getTracks()) track.stop();
+        }
+        localStreamRef.current = null;
+        localAudioTrackRef.current = null;
+        analyserRef.current = null;
+        stopAnalyserLoop();
+        if (channelRef.current) {
+          await channelRef.current.close().catch(() => {});
+        }
+        channelRef.current = null;
+        channelIdRef.current = null;
+        setIsConnected(false);
+        throw e;
+      } finally {
         setIsConnecting(false);
-        throw new Error('Microphone refusé ou indisponible');
       }
-      localStreamRef.current = stream;
-      const [audioTrack] = stream.getAudioTracks();
-      localAudioTrackRef.current = audioTrack ?? null;
-
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioContext();
-      }
-      const audioCtx = audioCtxRef.current;
-      if (audioCtx && localStreamRef.current) {
-        const src = audioCtx.createMediaStreamSource(localStreamRef.current);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
-        const data = new Uint8Array(new ArrayBuffer(analyser.fftSize));
-        src.connect(analyser);
-        analyserRef.current = { analyser, data };
-        startAnalyserLoop();
-      }
-
-      channelIdRef.current = channelId;
-      channelRef.current = openSignalingChannel(channelId, handleSignal);
-      await channelRef.current.send({
-        type: 'join',
-        fromUserId: myUserIdRef.current,
-        userName: myUserNameRef.current
-      });
-      await channelRef.current.send({ type: 'mute', fromUserId: myUserIdRef.current, isMuted });
-      setIsConnected(true);
-      setIsConnecting(false);
     },
-    [handleSignal, isMuted, startAnalyserLoop, supabase.auth]
+    [handleSignal, isMuted, startAnalyserLoop, stopAnalyserLoop, supabase.auth]
   );
 
   const leaveChannel = useCallback(async () => {
     if (!channelRef.current || !myUserIdRef.current) return;
-    await channelRef.current.send({ type: 'leave', fromUserId: myUserIdRef.current });
+    await channelRef.current.send({ type: 'leave', fromUserId: myUserIdRef.current }).catch(() => {});
     for (const pc of connsRef.current.values()) {
       pc.close();
     }
