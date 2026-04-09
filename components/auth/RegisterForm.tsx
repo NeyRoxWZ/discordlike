@@ -42,9 +42,18 @@ export function RegisterForm({ nextPath }: Props) {
   }, [nextPath]);
 
   const appOrigin = useMemo(() => {
-    const env = process.env.NEXT_PUBLIC_APP_URL;
-    if (env && env.startsWith('http')) return env.replace(/\/$/, '');
-    if (typeof window !== 'undefined') return window.location.origin;
+    const envRaw = process.env.NEXT_PUBLIC_APP_URL;
+    const env = envRaw && envRaw.startsWith('http') ? envRaw.replace(/\/$/, '') : '';
+    if (typeof window !== 'undefined') {
+      const win = window.location.origin;
+      if (env) {
+        try {
+          if (new URL(env).origin === win) return env;
+        } catch {}
+      }
+      return win;
+    }
+    if (env) return env;
     return '';
   }, []);
 
