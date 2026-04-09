@@ -16,11 +16,6 @@ export async function middleware(req: NextRequest) {
   if (!session && !isAuthPage && !isPublicPage) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
-  if (session && isAuthPage) {
-    const next = req.nextUrl.searchParams.get('next');
-    const nextPath = next && next.startsWith('/') ? next : '/channels/@me';
-    return NextResponse.redirect(new URL(nextPath, req.url));
-  }
   return res;
 }
 
