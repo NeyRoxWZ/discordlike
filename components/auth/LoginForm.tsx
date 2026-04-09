@@ -12,9 +12,6 @@ import { Input } from '@/components/ui/Input';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
-const DISCORD_OAUTH_URL =
-  'https://discord.com/oauth2/authorize?client_id=1491870338131169591&response_type=code&redirect_uri=https%3A%2F%2Frwwnejkqcfqdfofkstvh.supabase.co%2Fauth%2Fv1%2Fcallback&scope=identify+email+guilds+connections';
-
 const schema = z.object({
   email: z.string().email(),
   password: z.string().min(8)
@@ -29,12 +26,25 @@ interface Props {
 export function LoginForm({ nextPath }: Props) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+  const [oauthBusy, setOauthBusy] = useState(false);
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { email: '', password: '' } });
 
   const redirectTo = useMemo(() => {
     if (!nextPath || !nextPath.startsWith('/')) return '/channels/@me';
     return nextPath;
   }, [nextPath]);
+
+  const appOrigin = useMemo(() => {
+    const env = process.env.NEXT_PUBLIC_APP_URL;
+    if (env && env.startsWith('http')) return env.replace(/\/$/, '');
+    if (typeof window !== 'undefined') return window.location.origin;
+    return '';
+  }, []);
+
+  const oauthRedirectTo = useMemo(() => {
+    if (!appOrigin) return undefined;
+    return `${appOrigin}/api/auth/callback?next=${encodeURIComponent(redirectTo)}`;
+  }, [appOrigin, redirectTo]);
 
   async function onSubmit(values: FormValues) {
     setFormError(null);
@@ -53,6 +63,21 @@ export function LoginForm({ nextPath }: Props) {
     router.refresh();
   }
 
+  async function signInDiscord() {
+    setFormError(null);
+    setOauthBusy(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'discord',
+        options: oauthRedirectTo ? { redirectTo: oauthRedirectTo } : undefined
+      });
+      if (error) setFormError(error.message);
+    } finally {
+      setOauthBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
@@ -60,12 +85,7 @@ export function LoginForm({ nextPath }: Props) {
         <p className="text-sm text-text-secondary">Bienvenue sur Distollec</p>
       </div>
 
-      <Button
-        variant="secondary"
-        onClick={() => {
-          window.location.assign(DISCORD_OAUTH_URL);
-        }}
-      >
+      <Button variant="secondary" disabled={oauthBusy} onClick={() => void signInDiscord()}>
         Continuer avec Discord
       </Button>
 

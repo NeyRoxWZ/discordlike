@@ -12,9 +12,6 @@ import { Input } from '@/components/ui/Input';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
-const DISCORD_OAUTH_URL =
-  'https://discord.com/oauth2/authorize?client_id=1491870338131169591&response_type=code&redirect_uri=https%3A%2F%2Frwwnejkqcfqdfofkstvh.supabase.co%2Fauth%2Fv1%2Fcallback&scope=identify+email+guilds+connections';
-
 const schema = z.object({
   username: z.string().min(2).max(32),
   email: z.string().email(),
@@ -32,6 +29,7 @@ export function RegisterForm({ nextPath }: Props) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -43,10 +41,32 @@ export function RegisterForm({ nextPath }: Props) {
     return nextPath;
   }, [nextPath]);
 
+  const appOrigin = useMemo(() => {
+    const env = process.env.NEXT_PUBLIC_APP_URL;
+    if (env && env.startsWith('http')) return env.replace(/\/$/, '');
+    if (typeof window !== 'undefined') return window.location.origin;
+    return '';
+  }, []);
+
   const redirectTo = useMemo(() => {
-    if (typeof window === 'undefined') return undefined;
-    return `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(redirectTarget)}`;
-  }, [redirectTarget]);
+    if (!appOrigin) return undefined;
+    return `${appOrigin}/api/auth/callback?next=${encodeURIComponent(redirectTarget)}`;
+  }, [appOrigin, redirectTarget]);
+
+  async function signInDiscord() {
+    setFormError(null);
+    setOauthBusy(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'discord',
+        options: redirectTo ? { redirectTo } : undefined
+      });
+      if (error) setFormError(error.message);
+    } finally {
+      setOauthBusy(false);
+    }
+  }
 
   async function onSubmit(values: FormValues) {
     setFormError(null);
@@ -95,12 +115,7 @@ export function RegisterForm({ nextPath }: Props) {
         <p className="text-sm text-text-secondary">Rejoins Distollec</p>
       </div>
 
-      <Button
-        variant="secondary"
-        onClick={() => {
-          window.location.assign(DISCORD_OAUTH_URL);
-        }}
-      >
+      <Button variant="secondary" disabled={oauthBusy} onClick={() => void signInDiscord()}>
         Continuer avec Discord
       </Button>
 
